@@ -34,6 +34,7 @@ CPMS uses a **polyglot persistence** architecture to separate authoritative rela
 
 | Responsibility | Authoritative Store | Database Engine | Rationale |
 | :--- | :--- | :--- | :--- |
+| **Authentication & Roles** | Authoritative | **MySQL** | Strict uniqueness on email, relational linkage to Students/Mentors, ACID compliance. |
 | **User & Role Records** | Authoritative | **MySQL** | Strict foreign keys, unique email/USN constraints, ACID transactional security. |
 | **Project & Allocation** | Authoritative | **MySQL** | Enforces relational constraints between students, projects, and faculty mentors. |
 | **Official Submissions** | Authoritative | **MySQL** | Authoritative submission timestamps, status, and milestone deadlines. |
@@ -44,49 +45,74 @@ CPMS uses a **polyglot persistence** architecture to separate authoritative rela
 
 ---
 
-## 2. MongoDB Atlas Setup Requirements
+## 2. Authentication & Role-Based Access Control (Phase 1)
 
-To connect the application to MongoDB Atlas:
+CPMS implements secure, server-side authentication and role-based access control (RBAC) backed by the authoritative MySQL `Users` table.
 
-1. **MongoDB Atlas Account & Project**:
-   - Create an account at [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas).
-   - Create a project (e.g. `CPMS`).
-2. **Cluster Deployment**:
-   - Deploy a free-tier cluster (e.g. `CPMSCluster` on M0).
-3. **Database User Credentials**:
-   - Under **Database Access**, create a user (e.g., `cpms_admin`) with **Read and Write to any database** privileges.
-   - Securely save the password.
-4. **Network Access (IP Whitelist)**:
-   - Under **Network Access**, add your current IP address (or `0.0.0.0/0` for development and testing environments).
-5. **Connection String**:
-   - In Atlas, click **Connect** -> **Drivers** (Node.js) -> copy the connection string.
+### User Roles
+- `Student`: Access to student dashboard (`/dashboard/student`), project proposals, submission uploads.
+- `Mentor`: Access to mentor dashboard (`/dashboard/mentor`), project group reviews, feedback recording.
+- `Admin`: Access to administration dashboard (`/dashboard/admin`), guide allocation, user management.
+
+### Authoritative MySQL `Users` Schema
+```sql
+CREATE TABLE IF NOT EXISTS Users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role ENUM('Student', 'Mentor', 'Admin') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Security Architecture
+1. **Password Verification**: Passwords are verified against bcrypt hashes using `bcryptjs`. Plaintext passwords are never stored or compared.
+2. **Session Tokens**: JWT sessions are cryptographically signed using `jose` with the `HS256` algorithm using `SESSION_SECRET`.
+3. **Cookie Security**: Sessions are stored in an `HttpOnly`, `SameSite=Lax`, and `Secure` (in production) cookie (`cpms_session`), preventing JavaScript access (XSS mitigation).
+4. **Rate Limiting**: Mitigates brute-force credential attacks by limiting failed attempts per IP (max 5 failed attempts per 15-minute sliding window).
+5. **Anti-Enumeration**: Authentication returns generic `Invalid email or password` errors to prevent email/username enumeration.
+6. **Server-Side RBAC**: Authorization is enforced strictly on the server (`requireRole()`, `requireStudent()`, `requireMentor()`, `requireAdmin()`). Client-supplied role claims are never trusted.
 
 ---
 
 ## 3. Environment Variables Configuration
 
-Create a `.env.local` file in the project root. This file is ignored by Git and must **never** be committed to version control.
-
-Required variables:
+Configure your `.env.local` file in the project root. This file is ignored by Git and must **never** be committed.
 
 ```env
-# MongoDB Atlas Connection String
-# Replace <username>, <password>, and <cluster-url> with your Atlas cluster details
-MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-url>/?retryWrites=true&w=majority
+# ==========================================
+# MySQL Database Configuration
+# ==========================================
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=<your_mysql_password>
+MYSQL_DATABASE=cpms_db
 
-# Target MongoDB Database Name for CPMS NoSQL collections
+# ==========================================
+# Security & Session Configuration
+# ==========================================
+# Generate a secure 32+ character string (e.g. openssl rand -base64 32)
+SESSION_SECRET=<minimum_32_character_cryptographic_secret>
+
+# ==========================================
+# MongoDB Atlas Configuration
+# ==========================================
+# Replace placeholders with your Atlas cluster details
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-url>/?retryWrites=true&w=majority
 MONGODB_DATABASE=cpms_nosql
 ```
 
-> **Security Note:** Never commit `.env.local` to Git. Connection strings and credentials must always remain confidential.
+> **Security Note:** Never commit secret values or `.env.local` to source control.
 
 ---
 
 ## 4. Getting Started
 
 ### Prerequisites
-- Node.js 18+ or 20+ installed
-- npm, pnpm, or yarn
+- Node.js 18+ or 20+
+- MySQL Server 8.0 running locally on port 3306 with database `cpms_db`
+- MongoDB Atlas free cluster
 
 ### Installation & Execution
 
@@ -101,32 +127,45 @@ MONGODB_DATABASE=cpms_nosql
    ```
 
 3. Open [http://localhost:3000](http://localhost:3000) in your browser.
+4. Navigate to `/login` to access the CPMS Portal Login page.
 
-4. Run production build check:
+5. Run production build check:
    ```bash
    npm run build
    ```
 
 ---
 
-## 5. Testing the MongoDB Health Check
+## 5. Authentication API Endpoints
 
-The application provides a diagnostic health-check endpoint at:
+| Endpoint | Method | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `/api/auth/login` | `POST` | Public (Rate Limited) | Validates credentials via Zod + bcrypt, returns safe user object, sets HttpOnly session cookie. |
+| `/api/auth/logout` | `POST` | Authenticated | Clears the `cpms_session` cookie. |
+| `/api/auth/me` | `GET` | Authenticated | Returns current authenticated safe user profile (`user_id`, `email`, `role`). |
+| `/api/auth/protected-demo` | `GET` | Authenticated | Diagnostic route demonstrating server-side role validation (`?role=Admin`, `Mentor`, `Student`). |
 
+### Example Login Request
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "student@pes.edu", "password": "YourPassword123"}' \
+  -c cookies.txt
 ```
-GET /api/mongodb-test
+
+### Example Check Current User
+```bash
+curl http://localhost:3000/api/auth/me -b cookies.txt
 ```
 
-### Testing with Browser or cURL
+---
 
-Run while `npm run dev` is running:
+## 6. Testing the MongoDB Health Check
 
 ```bash
 curl http://localhost:3000/api/mongodb-test
 ```
-
-### Successful Response (HTTP 200)
-
+Response (HTTP 200):
 ```json
 {
   "success": true,
@@ -136,129 +175,12 @@ curl http://localhost:3000/api/mongodb-test
 }
 ```
 
-### Safe Error Handling (HTTP 500)
-
-If network access or credentials fail, the endpoint returns safe diagnostic feedback without exposing credentials or internal URI strings:
-
-```json
-{
-  "success": false,
-  "message": "Failed to connect to MongoDB Atlas. Verify cluster status, network access whitelist, and credentials in .env.local.",
-  "error": "MongoServerSelectionError"
-}
-```
-
-> **Environment Restriction:** The `/api/mongodb-test` route is restricted to development and returns HTTP 403 Forbidden in production environments.
-
 ---
 
-## 6. MongoDB NoSQL Collections
+## 7. MongoDB NoSQL Collections
 
 The application module at `src/lib/nosql` provides type-safe, validated data access for three collections:
 
-### Collection 1: `project_activity`
-- **Purpose**: Append-only audit trail and activity log capturing events across the capstone project lifecycle.
-- **Relational References**: `projectId` (MySQL `projects.project_id`), `actorId` (MySQL `users.user_id`).
-- **Example Document**:
-  ```json
-  {
-    "_id": { "$oid": "6ae225c1acc7140b5ede1eca" },
-    "projectId": 101,
-    "actorId": 14,
-    "actorRole": "student",
-    "action": "PROPOSAL_UPLOAD",
-    "description": "Uploaded initial capstone proposal document.",
-    "metadata": {
-      "fileFormat": "PDF",
-      "wordCount": 2450,
-      "ipAddress": "192.168.1.5"
-    },
-    "timestamp": "2026-10-28T16:41:37.833Z"
-  }
-  ```
-
-### Collection 2: `submission_history`
-- **Purpose**: Versioned archive of milestone submissions, file metadata, Git commit hashes, and changelog diffs without cluttering the authoritative MySQL submissions table.
-- **Relational References**: `submissionId` (MySQL `submissions.submission_id`), `projectId` (MySQL `projects.project_id`), `studentId` (MySQL `students.student_id`).
-- **Example Document**:
-  ```json
-  {
-    "_id": { "$oid": "6ae226d2acc7140b5ede1ecb" },
-    "submissionId": 45,
-    "projectId": 101,
-    "studentId": 14,
-    "versionNumber": 2,
-    "fileName": "cpms_architecture_v2.pdf",
-    "fileSizeBytes": 524288,
-    "mimeType": "application/pdf",
-    "storagePath": "milestones/project_101/v2_architecture.pdf",
-    "commitHash": "9a3f12c8b74e2d",
-    "changeNotes": "Addressed mentor comments: added ER diagram and MongoDB collections schema.",
-    "metadata": {
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "pageCount": 18
-    },
-    "submittedAt": "2026-10-28T16:41:37.833Z"
-  }
-  ```
-
-### Collection 3: `mentor_feedback_history`
-- **Purpose**: Iterative qualitative feedback stream, checklist reviews, and rubric criteria notes provided by faculty mentors over multiple review rounds.
-- **Relational References**: `projectId` (MySQL `projects.project_id`), `mentorId` (MySQL `faculty.faculty_id`), optional `submissionId`.
-- **Example Document**:
-  ```json
-  {
-    "_id": { "$oid": "6ae227e3acc7140b5ede1ecc" },
-    "projectId": 101,
-    "mentorId": 5,
-    "submissionId": 45,
-    "milestoneTitle": "Architecture & Schema Review",
-    "feedbackType": "suggestion",
-    "comments": "The dual-database architecture separating MySQL relational data from MongoDB audit logs is well designed. Proceed to milestone 2.",
-    "actionItems": [
-      "Ensure MongoDB indexes on (projectId, timestamp) are documented",
-      "Prepare presentation slides for phase review"
-    ],
-    "ratings": {
-      "technicalClarity": 5,
-      "schemaDesign": 5,
-      "feasibility": 4
-    },
-    "metadata": {
-      "reviewDurationMinutes": 25
-    },
-    "createdAt": "2026-10-28T16:41:37.833Z"
-  }
-  ```
-
----
-
-## 7. Development Demo Endpoint
-
-For local testing and verification of the NoSQL collections, a demo route is available at `/api/nosql-demo`.
-
-> **Notice:** This endpoint is strictly for local development testing (`NODE_ENV !== "production"`). In production, it returns `403 Forbidden`. Official writes in the application require authentication and authorization.
-
-### Read Demo Records
-```bash
-GET /api/nosql-demo?collection=project_activity&projectId=101
-```
-
-### Write Demo Record
-```bash
-POST /api/nosql-demo
-Content-Type: application/json
-
-{
-  "collection": "project_activity",
-  "data": {
-    "projectId": 101,
-    "actorId": 14,
-    "actorRole": "student",
-    "action": "PROPOSAL_UPLOAD",
-    "description": "Uploaded proposal draft.",
-    "metadata": { "wordCount": 2400 }
-  }
-}
-```
-Supported collections for this endpoint: `project_activity`, `submission_history`, and `mentor_feedback_history`. Arbitrary collection names are rejected with `400 Bad Request`.
+1. `project_activity`: Real-time activity audit trail and project event log.
+2. `submission_history`: Multi-version milestone submission file snapshots and checksums.
+3. `mentor_feedback_history`: Qualitative review commentary, checklist items, and rubric notes.
