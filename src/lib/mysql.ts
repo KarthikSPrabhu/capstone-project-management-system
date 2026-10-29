@@ -70,4 +70,31 @@ export async function query<T = unknown>(
   }
 }
 
+/**
+ * Executes a callback within a managed MySQL transaction.
+ *
+ * Automatically issues BEGIN, COMMIT, and ROLLBACK (on failure),
+ * and safely releases the dedicated connection back to the pool.
+ */
+export async function withTransaction<T>(
+  callback: (connection: mysql.PoolConnection) => Promise<T>
+): Promise<T> {
+  const currentPool = getPool();
+  const connection = await currentPool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error: unknown) {
+    await connection.rollback();
+    const errorType = error instanceof Error ? error.name : "MySQLError";
+    const errorCode = (error as { code?: string })?.code || "UNKNOWN";
+    console.error(`[MySQL Transaction Error] Rolled back. Code: ${errorCode}, Type: ${errorType}`);
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export default pool;

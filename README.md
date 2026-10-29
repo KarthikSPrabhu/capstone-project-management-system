@@ -184,3 +184,51 @@ The application module at `src/lib/nosql` provides type-safe, validated data acc
 1. `project_activity`: Real-time activity audit trail and project event log.
 2. `submission_history`: Multi-version milestone submission file snapshots and checksums.
 3. `mentor_feedback_history`: Qualitative review commentary, checklist items, and rubric notes.
+
+---
+
+## 8. Student and Group Management (Phase 2)
+
+Phase 2 introduces authoritative student directory management and capstone project group formation.
+
+### Relational Schema Linkage
+```
++---------------+       +------------------+       +-------------------+
+|     Users     | ----> |     Students     | ----> |   Group_Members   |
+|  (Auth Info)  | 1 : 1 |  (USN & Academic)| 1 : N | (Active Membership|
++---------------+       +------------------+       +---------+---------+
+                                                             | N : 1
+                                                             v
++---------------------+       +------------------------------------+
+|  Capstone_Projects  | <---- |           Project_Groups           |
+| (Official Project)  | 1 : 1 |    (Team Size, Year, & Leader)     |
++---------------------+       +------------------------------------+
+```
+
+### Business Rules & Security Enforcements
+1. **Capacity Limit**: Enforces a strict maximum of **4 active members** per capstone group.
+2. **Single Active Group Rule**: Prevents any student from belonging to multiple active, non-disbanded groups simultaneously.
+3. **Team Leader Integrity**: The designated team leader must be an active member of the created group.
+4. **ACID Transactions**: Group creation, member additions, and project linkage are executed atomically within managed MySQL transactions (`withTransaction`), guaranteeing clean rollbacks on failure.
+5. **Role-Based Authorization**: All student management, directory queries, and group formation APIs require verified `Admin` role privileges (`requireAdmin()`).
+6. **Data Privacy**: Student records, directory views, and group detail queries never expose `password_hash` or sensitive authentication tokens.
+
+### Phase 2 Admin API Endpoints
+
+| Endpoint | Method | Role | Description |
+| :--- | :--- | :--- | :--- |
+| `/api/admin/students` | `GET` | `Admin` | Searchable student directory with filtering by USN, name, department, batch, semester, and allocation status. |
+| `/api/admin/students` | `POST` | `Admin` | Provisions a new student and associated user account. |
+| `/api/admin/students/[id]` | `GET` | `Admin` | Retrieves detailed student profile, current active group, team roster, and past group history. |
+| `/api/admin/students/[id]` | `PATCH` | `Admin` | Updates student academic status, section, semester, or contact details. |
+| `/api/admin/students/available` | `GET` | `Admin` | Returns active students who are unassigned to any active capstone group. |
+| `/api/admin/groups` | `GET` | `Admin` | Lists capstone groups with leader information, active member count, and linked project status. |
+| `/api/admin/groups` | `POST` | `Admin` | Atomically creates a capstone project group, assigns members, and optionally links project synopsis. |
+| `/api/admin/groups/[id]` | `GET` | `Admin` | Retrieves full group details, complete member roster, and linked Capstone Project specifications. |
+
+### Running Phase 2 Automated Tests
+```bash
+npm run test:phase2
+```
+This automated suite verifies RBAC blocking, student search, credential privacy, 4-member limit enforcement, leader validation, duplicate active group prevention, and multi-table transactional creation.
+
