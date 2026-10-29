@@ -232,3 +232,67 @@ npm run test:phase2
 ```
 This automated suite verifies RBAC blocking, student search, credential privacy, 4-member limit enforcement, leader validation, duplicate active group prevention, and multi-table transactional creation.
 
+---
+
+## 9. Capstone Project and Mentor Management (Phase 3)
+
+Phase 3 introduces comprehensive capstone project lifecycle tracking, faculty mentor capacity governance, and role-based mentor allocations.
+
+### Relational Schema Linkage
+```
++---------------------+       1 : 1 (Unique)       +------------------------------------+
+|  Capstone_Projects  | <------------------------- |           Project_Groups           |
+| (Title, Domain, etc)|                            |    (Team Size, Year, & Leader)     |
++----------+----------+                            +------------------------------------+
+           | 1 : N
+           v
++-----------------------+     N : 1                +------------------------------------+
+|   Mentor_Allocations  | -----------------------> |          Capstone_Mentors          |
+| (Primary / Co-Mentor) |                          | (Capacity, Workload & Availability)|
++-----------------------+                          +-----------------+------------------+
+                                                                     | 1 : 1
+                                                                     v
+                                                           +-------------------+
+                                                           |       Users       |
+                                                           |    (Mentor Auth)  |
+                                                           +-------------------+
+```
+
+### Business Rules & Core Invariants
+1. **1-to-1 Group-to-Project Integrity**: Enforces MySQL `UNIQUE KEY` constraint on `Capstone_Projects.group_id`. A capstone group can be associated with at most one capstone project.
+2. **Mentor Capacity & Workload Governance**: A faculty mentor's workload is tracked via their active allocations count (`allocation_status = 'Active'`). Allocations are strictly rejected if a mentor has reached their maximum quota (`max_projects`) or if their availability status is set to `Unavailable`.
+3. **Primary Mentor Mutual Exclusivity**: A capstone project can have at most one active `Primary` mentor at any given time. When an administrator allocates a new Primary mentor, any existing active Primary mentor allocation is atomically transitioned to `Ended` (`end_date = CURDATE()`) inside a managed transaction.
+4. **Duplicate Allocation Prevention**: Enforces the composite unique constraint `uq_project_mentor (project_id, mentor_id)` in `mentor_allocations`. An active mentor cannot be re-allocated to the same project. If an allocation previously ended, the system safely reactivates the record.
+5. **ACID Transactional Guarantees**: Multi-step project creation, mentor workload evaluation, and atomic primary mentor reassignments are executed inside `withTransaction()` with row-level locks (`FOR UPDATE`).
+6. **Data Confidentiality & RBAC**: All project and mentor management APIs and dashboard views are restricted to administrators (`requireAdmin()`). Sensitive credentials (`password_hash`, session keys) are never exposed.
+
+### Phase 3 Admin API Endpoints
+
+| Endpoint | Method | Role | Description |
+| :--- | :--- | :--- | :--- |
+| `/api/admin/projects` | `GET` | `Admin` | Lists capstone projects with search, domain, phase, and status filters, plus aggregate project metrics. |
+| `/api/admin/projects` | `POST` | `Admin` | Registers a new capstone project linked to an existing group, validating uniqueness and title rules. |
+| `/api/admin/projects/[id]` | `GET` | `Admin` | Retrieves project specifications, student team roster, and full mentor allocation history. |
+| `/api/admin/projects/[id]` | `PATCH` | `Admin` | Updates project attributes (status, phase, problem statement, technology stack, repository URL). |
+| `/api/admin/projects/available-groups` | `GET` | `Admin` | Lists active groups that do not yet have an assigned project. |
+| `/api/admin/mentors` | `GET` | `Admin` | Lists faculty mentors with active workload count, max project capacity, availability, and assigned projects. |
+| `/api/admin/mentors/[id]` | `GET` | `Admin` | Retrieves complete mentor profile with past and active project allocation records. |
+| `/api/admin/mentors/[id]` | `PATCH` | `Admin` | Updates mentor guidance capacity (`max_projects`), availability status, specialization, or office. |
+| `/api/admin/mentors/allocations` | `POST` | `Admin` | Assigns a Primary or Co-Mentor to a project with capacity checks and atomic Primary transition. |
+| `/api/admin/mentors/allocations` | `DELETE` | `Admin` | Ends an active mentor allocation, setting `end_date = CURDATE()` and archiving allocation remarks. |
+
+### Running Phase 3 Automated Tests
+```bash
+npm run test:phase3
+```
+This automated suite validates:
+- Unauthenticated (401) and Non-Admin (403) RBAC enforcement across project and mentor endpoints.
+- Project directory queries and aggregate project statistics.
+- Full project details, team roster, mentor allocation history, and credential confidentiality.
+- 1-to-1 group-to-project unique constraint enforcement (HTTP 409 Conflict).
+- Mentor directory workload calculation and department statistics.
+- Mentor capacity limits (`max_projects`) and `Unavailable` status blocking.
+- Duplicate active assignment rejection and atomic Primary mentor transitions.
+- Ending mentor allocations via `DELETE /api/admin/mentors/allocations` and database state verification.
+
+

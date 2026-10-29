@@ -8,6 +8,8 @@ export function AdminNav() {
 
   const links = [
     { href: "/dashboard/admin", label: "Dashboard Overview" },
+    { href: "/dashboard/admin/projects", label: "Capstone Projects" },
+    { href: "/dashboard/admin/mentors", label: "Faculty Mentors" },
     { href: "/dashboard/admin/students", label: "Student Directory" },
     { href: "/dashboard/admin/groups", label: "Capstone Groups" },
   ];

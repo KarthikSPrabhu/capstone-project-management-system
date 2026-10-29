@@ -9,7 +9,8 @@
     "lint": "eslint",
     "provision:admin": "node scripts/provision-demo-admin.mjs",
     "test:auth": "node scripts/verify-auth-flows.mjs",
-    "test:phase2": "node scripts/verify-phase2.mjs"
+    "test:phase2": "node scripts/verify-phase2.mjs",
+    "test:phase3": "node scripts/verify-phase3.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
