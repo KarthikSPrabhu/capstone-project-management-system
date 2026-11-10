@@ -65,8 +65,8 @@ async function main() {
   });
 
   const studentToken = await signTestToken({
-    userId: 2,
-    email: "aarav@cpms.demo",
+    userId: 11,
+    email: "aarav@student.cpms.demo",
     role: "Student",
   });
 

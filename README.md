@@ -75,9 +75,9 @@ Only `Active` accounts can sign in.
 
 ### Security Architecture
 1. **Password Verification**: Passwords are verified against bcrypt hashes using `bcryptjs`. Plaintext passwords are never stored or compared.
-2. **Session Tokens**: JWT sessions are cryptographically signed using `jose` with the `HS256` algorithm using `SESSION_SECRET`.
+2. **Session Tokens**: JWT sessions are cryptographically signed using `jose` with the `HS256` algorithm using `SESSION_SECRET`. Every request re-checks the user in MySQL, so suspending an account or changing its role takes effect immediately.
 3. **Cookie Security**: Sessions are stored in an `HttpOnly`, `SameSite=Lax`, and `Secure` (in production) cookie (`cpms_session`), preventing JavaScript access (XSS mitigation).
-4. **Rate Limiting**: Mitigates brute-force credential attacks by limiting failed attempts per IP (max 5 failed attempts per 15-minute sliding window).
+4. **Rate Limiting**: Mitigates brute-force credential attacks by limiting failed attempts per account email, and per client IP when `TRUST_PROXY=true` (max 5 failed attempts per 15-minute window).
 5. **Anti-Enumeration**: Authentication returns generic `Invalid email or password` errors to prevent email/username enumeration.
 6. **Server-Side RBAC**: Authorization is enforced strictly on the server (`requireRole()`, `requireStudent()`, `requireMentor()`, `requireAdmin()`). Client-supplied role claims are never trusted.
 
@@ -96,12 +96,18 @@ MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=<your_mysql_password>
 MYSQL_DATABASE=cpms_db
+# UTC offset used for due dates and late-submission checks (default +05:30)
+DB_TIMEZONE=+05:30
 
 # ==========================================
 # Security & Session Configuration
 # ==========================================
 # Generate a secure 32+ character string (e.g. openssl rand -base64 32)
 SESSION_SECRET=<minimum_32_character_cryptographic_secret>
+
+# Set to true only when running behind a reverse proxy you control that sets
+# X-Forwarded-For; otherwise login attempts are rate-limited per account only.
+TRUST_PROXY=false
 
 # ==========================================
 # MongoDB Atlas Configuration (OPTIONAL)

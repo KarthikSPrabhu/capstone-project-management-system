@@ -35,6 +35,12 @@ if (!/^[A-Za-z0-9_]+$/.test(DB_NAME)) {
   process.exit(1);
 }
 
+const DB_TIMEZONE = (process.env.DB_TIMEZONE || "+05:30").trim();
+if (!/^[+-](0\d|1[0-4]):[0-5]\d$/.test(DB_TIMEZONE)) {
+  console.error("FATAL: DB_TIMEZONE must be a UTC offset like +05:30.");
+  process.exit(1);
+}
+
 const DB_DIR = path.join(process.cwd(), "db");
 const SCHEMA_FILES = [
   "001_core_schema.sql",
@@ -110,7 +116,11 @@ async function main() {
     port: parseInt(process.env.MYSQL_PORT || "3306", 10),
     user: process.env.MYSQL_USER || "root",
     password: process.env.MYSQL_PASSWORD || "",
+    timezone: DB_TIMEZONE,
   });
+  // Same session time zone as the app (src/lib/mysql.ts), so seed data and
+  // triggers that use CURRENT_TIMESTAMP line up with the milestone due dates.
+  await conn.query("SET time_zone = ?", [DB_TIMEZONE]);
 
   try {
     const [[{ version }]] = await conn.query("SELECT VERSION() AS version");

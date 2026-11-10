@@ -1,7 +1,9 @@
 /**
  * Practical in-memory rate limiter to mitigate brute-force and credential-stuffing attacks.
  *
- * Tracks failed authentication attempts per client IP within a sliding time window.
+ * Tracks failed authentication attempts per key (client IP or account email)
+ * within a sliding time window. State is in memory, so it resets when the
+ * server restarts and is not shared between multiple server instances.
  */
 
 interface RateLimitRecord {

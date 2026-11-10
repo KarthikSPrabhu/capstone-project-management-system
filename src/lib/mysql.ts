@@ -13,6 +13,24 @@ declare global {
   var _mysqlPool: mysql.Pool | undefined;
 }
 
+/**
+ * Time zone used by every connection, as a UTC offset (default India, +05:30).
+ *
+ * Milestone due dates are DATETIME values typed in local time, while
+ * NOW() / CURRENT_TIMESTAMP follow the MySQL session time zone. Pinning the
+ * session time zone keeps late-submission detection and overdue reports
+ * correct even when the MySQL server itself runs in UTC (most cloud hosts).
+ */
+export function getDbTimezone(): string {
+  const tz = (process.env.DB_TIMEZONE || "+05:30").trim();
+  if (!/^[+-](0\d|1[0-4]):[0-5]\d$/.test(tz)) {
+    throw new Error(
+      `Configuration error: DB_TIMEZONE must be a UTC offset like +05:30 (got "${tz}").`
+    );
+  }
+  return tz;
+}
+
 function getPool(): mysql.Pool {
   if (global._mysqlPool) {
     return global._mysqlPool;
@@ -35,6 +53,12 @@ function getPool(): mysql.Pool {
     queueLimit: 0,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
+    timezone: getDbTimezone(),
+  });
+
+  // Runs once per new physical connection, before any query queued on it.
+  pool.on("connection", (connection) => {
+    connection.query("SET time_zone = ?", [getDbTimezone()]);
   });
 
   if (process.env.NODE_ENV === "development") {
