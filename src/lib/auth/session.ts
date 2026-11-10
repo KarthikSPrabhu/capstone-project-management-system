@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { query } from "@/lib/mysql";
 import { SessionPayload, UserRole, USER_ROLES } from "./types";
 
 export const SESSION_COOKIE_NAME = "cpms_session";
@@ -89,7 +90,38 @@ export async function getSessionFromRequest(
   if (!match) {
     return null;
   }
-  return verifySessionToken(match[1]);
+  return resolveActiveSession(await verifySessionToken(match[1]));
+}
+
+/**
+ * Re-checks a verified token against the authoritative `users` table.
+ *
+ * A signed token only proves who the user was when they logged in. This makes
+ * suspending / deactivating an account, deleting it, or changing its role take
+ * effect on the very next request instead of when the 7-day token expires.
+ * The role and email always come from the database, never from the token.
+ */
+export async function resolveActiveSession(
+  payload: SessionPayload | null
+): Promise<SessionPayload | null> {
+  if (!payload) {
+    return null;
+  }
+  const rows = await query<
+    Array<{ email: string; role: string; account_status: string }>
+  >(
+    "SELECT email, role, account_status FROM users WHERE user_id = ? LIMIT 1",
+    [payload.userId]
+  );
+  const user = rows[0];
+  if (
+    !user ||
+    user.account_status !== "Active" ||
+    !USER_ROLES.includes(user.role as UserRole)
+  ) {
+    return null;
+  }
+  return { ...payload, email: user.email, role: user.role as UserRole };
 }
 
 /**
@@ -102,7 +134,7 @@ export async function getSession(): Promise<SessionPayload | null> {
     if (!token) {
       return null;
     }
-    return verifySessionToken(token);
+    return await resolveActiveSession(await verifySessionToken(token));
   } catch {
     return null;
   }
