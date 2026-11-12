@@ -1,0 +1,153 @@
+erDiagram
+    users ||--o| students : "has profile"
+    users ||--o| capstone_mentors : "has profile"
+    users ||--o{ notifications : receives
+    users |o--o{ milestones : creates
+    users |o--o{ proposals : reviews
+    users |o--o{ mentor_allocations : "allocates"
+
+    students ||--o{ group_members : "joins"
+    project_groups ||--o{ group_members : "has"
+    students |o--o{ project_groups : "leads"
+
+    project_groups ||--o{ proposals : submits
+    students ||--o{ proposals : "submitted by"
+
+    project_groups ||--o| capstone_projects : "becomes"
+    capstone_phases |o--o{ capstone_projects : "current phase"
+
+    capstone_projects ||--o{ mentor_allocations : "guided by"
+    capstone_mentors ||--o{ mentor_allocations : "guides"
+
+    capstone_projects ||--o{ submissions : has
+    milestones ||--o{ submissions : "for"
+    students ||--o{ submissions : "submitted by"
+    capstone_mentors |o--o{ submissions : reviews
+
+    capstone_projects ||--o{ evaluations : "evaluated in"
+    milestones ||--o{ evaluations : "at"
+    capstone_mentors ||--o{ evaluations : "evaluates"
+    evaluations ||--o{ student_evaluations : "marks per student"
+    students ||--o{ student_evaluations : receives
+
+    capstone_projects ||--o{ final_results : "results"
+    students ||--o{ final_results : "gets"
+
+    users {
+        int user_id PK
+        varchar email UK
+        varchar full_name
+        varchar password_hash
+        enum role "Student, Mentor, Coordinator, Admin"
+        enum account_status
+    }
+    students {
+        int student_id PK
+        int user_id FK,UK
+        varchar usn UK
+        varchar department
+        varchar batch
+        tinyint current_semester
+        decimal cgpa
+    }
+    capstone_mentors {
+        int mentor_id PK
+        int user_id FK,UK
+        varchar employee_id UK
+        varchar department
+        varchar designation
+        tinyint max_projects
+        enum availability_status
+    }
+    project_groups {
+        int group_id PK
+        varchar group_name "UK with academic_year"
+        varchar academic_year
+        int team_leader_id FK
+        tinyint team_size
+        enum group_status
+    }
+    group_members {
+        int group_member_id PK
+        int group_id FK "UK with student_id"
+        int student_id FK
+        enum member_role "Leader, Member"
+        enum membership_status
+    }
+    capstone_phases {
+        int phase_id PK
+        tinyint phase_number UK
+        varchar phase_name
+    }
+    capstone_projects {
+        int project_id PK
+        int group_id FK,UK
+        varchar project_title
+        int current_phase_id FK
+        enum project_status
+        date start_date
+    }
+    mentor_allocations {
+        int allocation_id PK
+        int project_id FK "UK with mentor_id"
+        int mentor_id FK
+        int allocated_by FK
+        enum mentor_role "Primary, Co-Mentor"
+        enum allocation_status
+    }
+    proposals {
+        int proposal_id PK
+        int group_id FK "UK with version_no"
+        int submitted_by FK
+        smallint version_no
+        varchar title
+        enum proposal_status
+        int reviewed_by FK
+    }
+    milestones {
+        int milestone_id PK
+        varchar academic_year "UK with milestone_order"
+        tinyint milestone_order
+        varchar title
+        datetime due_date
+        decimal max_marks
+        decimal weightage
+        int created_by FK
+    }
+    submissions {
+        int submission_id PK
+        int project_id FK "UK with milestone_id, version_no"
+        int milestone_id FK
+        int submitted_by FK
+        smallint version_no
+        varchar document_url
+        boolean is_late
+        enum submission_status
+        int reviewed_by FK
+    }
+    evaluations {
+        int evaluation_id PK
+        int project_id FK "UK with milestone_id, evaluator_id"
+        int milestone_id FK
+        int evaluator_id FK
+        varchar comments
+    }
+    student_evaluations {
+        int student_evaluation_id PK
+        int evaluation_id FK "UK with student_id"
+        int student_id FK
+        decimal marks_awarded
+    }
+    final_results {
+        int project_id PK,FK
+        int student_id PK,FK
+        decimal weighted_total
+        char grade
+        tinyint milestones_evaluated
+    }
+    notifications {
+        int notification_id PK
+        int user_id FK
+        varchar title
+        boolean is_read
+    }
