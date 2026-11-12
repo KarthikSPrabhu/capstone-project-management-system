@@ -2,6 +2,10 @@
 
 A DBMS Level 3 mini-project built with **Next.js (App Router)**, **TypeScript**, **MySQL**, and **MongoDB Atlas**.
 
+**Documentation**
+- [Database design](docs/DATABASE.md): ER diagram, relationships and normalization
+- [Presentation guide](docs/PRESENTATION.md): setup checklist, demo script, trigger and procedure walkthroughs, viva questions
+
 ---
 
 ## 1. System Architecture: MySQL vs. MongoDB Atlas
